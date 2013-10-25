@@ -58,6 +58,7 @@ MainTab::MainTab(QWidget *parent) : QTabWidget(parent),
 	ui.airtemp->installEventFilter(this);
 	ui.watertemp->installEventFilter(this);
 	ui.dateTimeEdit->installEventFilter(this);
+	ui.tagWidget->installEventFilter(this);
 
 	QList<QObject *> statisticsTabWidgets = ui.statisticsTab->children();
 	Q_FOREACH(QObject* obj, statisticsTabWidgets) {
@@ -87,11 +88,12 @@ MainTab::MainTab(QWidget *parent) : QTabWidget(parent),
 	completers.divemaster = new QCompleter(DiveMasterCompletionModel::instance(), ui.divemaster);
 	completers.location = new QCompleter(LocationCompletionModel::instance(), ui.location);
 	completers.suit = new QCompleter(SuitCompletionModel::instance(), ui.suit);
+	completers.tags = new QCompleter(TagCompletionModel::instance(), ui.tagWidget);
 	ui.buddy->setCompleter(completers.buddy);
 	ui.divemaster->setCompleter(completers.divemaster);
 	ui.location->setCompleter(completers.location);
 	ui.suit->setCompleter(completers.suit);
-
+	ui.tagWidget->setCompleter(completers.tags);
 	setMinimumHeight(0);
 	setMinimumWidth(0);
 
@@ -161,6 +163,9 @@ void MainTab::enableEdition()
 			notesBackup[mydive].airtemp = get_temperature_string(mydive->airtemp, true);
 			notesBackup[mydive].watertemp = get_temperature_string(mydive->watertemp, true);
 			notesBackup[mydive].datetime = QDateTime::fromTime_t(mydive->when - gettimezoneoffset()).toString(QString("M/d/yy h:mm"));
+			char buf[1024];
+			taglist_get_tagstring(mydive->tag_list, buf, 1024);
+			notesBackup[mydive].tags = QString(buf);
 
 			// maybe this is a place for memset?
 			for (int i = 0; i < MAX_CYLINDERS; i++) {
@@ -181,7 +186,9 @@ bool MainTab::eventFilter(QObject* object, QEvent* event)
 		enableEdition();
 	}
 
-	if (isEnabled() && event->type() == QEvent::FocusIn && (object == ui.rating || object == ui.visibility)) {
+	if (isEnabled() && event->type() == QEvent::FocusIn && (object == ui.rating ||
+								object == ui.visibility	||
+								object == ui.tagWidget)) {
 		tabBar()->setTabIcon(currentIndex(), QIcon(":warning"));
 		enableEdition();
 	}
@@ -214,6 +221,7 @@ void MainTab::clearInfo()
 	ui.airTemperatureText->clear();
 	ui.airPressureText->clear();
 	ui.salinityText->clear();
+	ui.tagWidget->clear();
 }
 
 void MainTab::clearStats()
@@ -355,6 +363,11 @@ void MainTab::updateDiveInfo(int dive)
 		ui.timeLimits->setMaximum(get_time_string(stats_selection.longest_time.seconds, 0));
 		ui.timeLimits->setMinimum(get_time_string(stats_selection.shortest_time.seconds, 0));
 
+
+		char buf[1024];
+		taglist_get_tagstring(d->tag_list, buf, 1024);
+		ui.tagWidget->setText(QString(buf));
+
 		multiEditEquipmentPlaceholder = *d;
 		cylindersModel->setDive(&multiEditEquipmentPlaceholder);
 		weightModel->setDive(&multiEditEquipmentPlaceholder);
@@ -392,6 +405,7 @@ void MainTab::reload()
 	BuddyCompletionModel::instance()->updateModel();
 	LocationCompletionModel::instance()->updateModel();
 	DiveMasterCompletionModel::instance()->updateModel();
+	TagCompletionModel::instance()->updateModel();
 }
 
 void MainTab::acceptChanges()
@@ -422,13 +436,17 @@ void MainTab::acceptChanges()
 			notesBackup[curr].airtemp != ui.airtemp->text() ||
 			notesBackup[curr].watertemp != ui.watertemp->text() ||
 			notesBackup[curr].datetime != ui.dateTimeEdit->dateTime().toString(QString("M/d/yy h:mm")) ||
-			notesBackup[curr].visibility != ui.rating->currentStars()) {
+			notesBackup[curr].visibility != ui.rating->currentStars() ||
+			notesBackup[curr].tags != ui.tagWidget->text()) {
 			mark_divelist_changed(TRUE);
 		}
 		if (notesBackup[curr].location != ui.location->text() ||
 			notesBackup[curr].coordinates != ui.coordinates->text()) {
 			mainWindow()->globe()->reload();
 		}
+
+		if (notesBackup[curr].tags != ui.tagWidget->text())
+			saveTags();
 
 		if (cylindersModel->changed) {
 			mark_divelist_changed(TRUE);
@@ -479,6 +497,7 @@ void MainTab::resetPallete()
 	ui.airtemp->setPalette(p);
 	ui.watertemp->setPalette(p);
 	ui.dateTimeEdit->setPalette(p);
+	ui.tagWidget->setPalette(p);
 }
 
 #define EDIT_TEXT2(what, text) \
@@ -518,6 +537,7 @@ void MainTab::rejectChanges()
 		ui.airtemp->setText(notesBackup[curr].airtemp);
 		ui.watertemp->setText(notesBackup[curr].watertemp);
 		ui.dateTimeEdit->setDateTime(QDateTime::fromString(notesBackup[curr].datetime, QString("M/d/y h:mm")));
+		ui.tagWidget->setText(notesBackup[curr].tags);
 
 		struct dive *mydive;
 		for (int i = 0; i < dive_table.nr; i++) {
@@ -622,6 +642,21 @@ void MainTab::on_dateTimeEdit_dateTimeChanged(const QDateTime& datetime)
 {
 	EDIT_SELECTED_DIVES( mydive->when = datetime.toTime_t() + gettimezoneoffset() );
 	markChangedWidget(ui.dateTimeEdit);
+}
+
+void MainTab::saveTags()
+{
+	EDIT_SELECTED_DIVES(
+		QString tag;
+		taglist_clear(mydive->tag_list);
+		foreach (tag, ui.tagWidget->getBlockStringList())
+			taglist_add_tag(mydive->tag_list, tag.toAscii().data());
+	);
+}
+
+void MainTab::on_tagWidget_textChanged()
+{
+	markChangedWidget(ui.tagWidget);
 }
 
 void MainTab::on_location_textChanged(const QString& text)

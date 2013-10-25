@@ -31,6 +31,7 @@ struct NotesBackup{
 	int rating;
 	int visibility;
 	QString divemaster;
+	QString tags;
 	cylinder_t cylinders[MAX_CYLINDERS];
 	weightsystem_t weightsystem[MAX_WEIGHTSYSTEMS ];
 };
@@ -40,6 +41,7 @@ struct Completers{
 	QCompleter *divemaster;
 	QCompleter *buddy;
 	QCompleter *suit;
+	QCompleter *tags;
 };
 
 class MainTab : public QTabWidget
@@ -75,6 +77,9 @@ public slots:
 	void editWeightWidget(const QModelIndex& index);
 	void addDiveStarted();
 
+private slots:
+	void on_tagWidget_textChanged();
+
 private:
 	Ui::MainTab ui;
 	WeightModel *weightModel;
@@ -92,6 +97,7 @@ private:
 	Completers completers;
 	void enableEdition();
 	void resetPallete();
+	void saveTags();
 	QString printGPSCoords(int lat, int lon);
 };
 
